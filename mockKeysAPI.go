@@ -17,6 +17,8 @@ type KeysAPIWrapper interface {
 
 type FakeKeysAPI struct {
 	ExpectedResponses []*ExpectedResponse
+	ExpectedSets []*ExpectedResponse
+	ReceivedSets []*ExpectedResponse
 }
 
 type ExpectedResponse struct {
@@ -24,12 +26,14 @@ type ExpectedResponse struct {
 	Response *client.Response
 }
 
-func (e *ExpectedResponse) WillReturnError(err error) {
+func (e *ExpectedResponse) WillReturnError(err error) *ExpectedResponse {
 	e.Err = err
+	return e
 }
 
-func (e *ExpectedResponse) WillReturnValue(value string) {
+func (e *ExpectedResponse) WillReturnValue(value string) *ExpectedResponse {
 	e.Response.Node.Value = value
+	return e
 }
 
 func (f *FakeKeysAPI) Get(ctx context.Context, key string, opts *client.GetOptions) (resp *client.Response, err error) {
@@ -54,7 +58,8 @@ func (f *FakeKeysAPI) Get(ctx context.Context, key string, opts *client.GetOptio
 }
 
 func (f *FakeKeysAPI) Set(ctx context.Context, key, val string, opts *client.SetOptions) (*client.Response, error) {
-	f.ExpectGet(key).WillReturnValue(val)
+	e := f.ExpectGet(key).WillReturnValue(val)
+	f.ReceivedSets = append(f.ReceivedSets, e)
 	resp := client.Response{
 		Action: "set",
 		Node: &client.Node{
@@ -100,6 +105,18 @@ func (f *FakeKeysAPI) ExpectationsFulfilled() error {
 	if len(f.ExpectedResponses) != 0 {
 		return errors.New("unmet expectations in FakeKeysAPI")
 	}
+	if len(f.ExpectedSets) != len(f.ReceivedSets) {
+		return errors.New("one or more unfulfilled expected sets")
+	}
+	for i := 0; i < len(f.ExpectedSets); i++ {
+		expectedKey := f.ExpectedSets[i].Response.Node.Key
+		expectedValue := f.ExpectedSets[i].Response.Node.Value
+		receivedKey := f.ReceivedSets[i].Response.Node.Key
+		receivedValue := f.ReceivedSets[i].Response.Node.Value
+		if expectedKey != receivedKey || expectedValue != receivedValue {
+			return errors.New(fmt.Sprintf("expected Sets run out of order, %v, %v, %v, %v", expectedKey, receivedKey, expectedValue, receivedValue))
+		}
+	}
 	return nil
 }
 
@@ -108,5 +125,13 @@ func (f *FakeKeysAPI) ExpectGet(key string) *ExpectedResponse {
 	resp := &client.Response{Node: node}
 	expectedResp := &ExpectedResponse{Response: resp}
 	f.ExpectedResponses = append(f.ExpectedResponses, expectedResp)
+	return expectedResp
+}
+
+func (f *FakeKeysAPI) ExpectSet(key, value string) *ExpectedResponse {
+	node := &client.Node{Key: key, Value: value}
+	resp := &client.Response{Node: node}
+	expectedResp := &ExpectedResponse{Response: resp}
+	f.ExpectedSets = append(f.ExpectedSets, expectedResp)
 	return expectedResp
 }
