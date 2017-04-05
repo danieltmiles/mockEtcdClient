@@ -49,27 +49,27 @@ func TestExpectSet(t *testing.T) {
 	kapi = &mock
 
 	mock.ExpectSet("/some/key", "some value")
-	kapi.Set(context.Background(), "/some/key", "some value", nil)
-	resp, err := kapi.Get(context.Background(), "/some/key", nil)
+	resp, err := kapi.Set(context.Background(), "/some/key", "some value", nil)
 	Expect(err).NotTo(HaveOccurred())
+	Expect(resp.Node).NotTo(BeNil())
 	Expect(resp.Node.Key).To(Equal("/some/key"))
 	Expect(resp.Node.Value).To(Equal("some value"))
 	err = mock.ExpectationsFulfilled()
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func TestExpectSetSomeOtherKey(t *testing.T) {
+func TestExpectSetError(t *testing.T) {
 	RegisterTestingT(t)
 	var kapi client.KeysAPI
 	mock := FakeKeysAPI{}
 	kapi = &mock
 
-	mock.ExpectSet("/some/key", "some value")
-	kapi.Set(context.Background(), "/some/other/key", "some value", nil)
-	_, err := kapi.Get(context.Background(), "/some/key", nil)
+	mock.ExpectSet("/some/key", "some value").WillReturnError(errors.New("this is a testing error"))
+	resp, err := kapi.Set(context.Background(), "/some/other/key", "some value", nil)
 	Expect(err).To(HaveOccurred())
+	Expect(resp).To(BeNil())
 	err = mock.ExpectationsFulfilled()
-	Expect(err).To(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 }
 
 func TestExpectSetNotRecvd(t *testing.T) {
