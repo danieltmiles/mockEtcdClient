@@ -17,8 +17,8 @@ type KeysAPIWrapper interface {
 
 type FakeKeysAPI struct {
 	ExpectedResponses []*ExpectedResponse
-	ExpectedSets []*ExpectedResponse
-	ReceivedSets []*ExpectedResponse
+	ExpectedSets      []*ExpectedResponse
+	ReceivedSets      []*ExpectedResponse
 }
 
 type ExpectedResponse struct {
@@ -58,16 +58,21 @@ func (f *FakeKeysAPI) Get(ctx context.Context, key string, opts *client.GetOptio
 }
 
 func (f *FakeKeysAPI) Set(ctx context.Context, key, val string, opts *client.SetOptions) (*client.Response, error) {
-	e := f.ExpectGet(key).WillReturnValue(val)
-	f.ReceivedSets = append(f.ReceivedSets, e)
-	resp := client.Response{
-		Action: "set",
-		Node: &client.Node{
-			Key:   key,
-			Value: val,
-		},
+	if len(f.ExpectedSets) < 1 {
+		return nil, errors.New("no more SET operations expected")
 	}
-	return &resp, nil
+	expected := f.ExpectedSets[0]
+	f.ExpectedSets = f.ExpectedSets[1:]
+	if expected.Err != nil {
+		return nil, expected.Err
+	}
+	if expected.Response != nil && expected.Response.Node != nil {
+		if expected.Response.Node.Key == key && expected.Response.Node.Value == val {
+			return expected.Response, nil
+		}
+		return nil, errors.New(fmt.Sprintf("wrong key/value pair in Set, expected a set for %v/%v, got %v/%v", expected.Response.Node.Key, expected.Response.Node.Value, key, val))
+	}
+	return nil, errors.New("malformed expected-Set")
 }
 
 func (f *FakeKeysAPI) Delete(ctx context.Context, key string, opts *client.DeleteOptions) (*client.Response, error) {
