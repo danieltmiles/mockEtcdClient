@@ -19,6 +19,7 @@ type FakeKeysAPI struct {
 	ExpectedResponses []*ExpectedResponse
 	ExpectedSets      []*ExpectedResponse
 	ReceivedSets      []*ExpectedResponse
+	AllowUnordered    bool
 }
 
 type ExpectedResponse struct {
@@ -36,8 +37,32 @@ func (e *ExpectedResponse) WillReturnValue(value string) *ExpectedResponse {
 	return e
 }
 
-func (f *FakeKeysAPI) Get(ctx context.Context, key string, opts *client.GetOptions) (resp *client.Response, err error) {
-	resp = &client.Response{}
+func (f *FakeKeysAPI) getUnordered(ctx context.Context, key string, opts *client.GetOptions) (resp *client.Response, err error) {
+	var idx int
+	for i := 0; i < len(f.ExpectedResponses); i++ {
+		e := f.ExpectedResponses[i]
+		if e != nil && e.Response != nil && e.Response.Node != nil && e.Response.Node.Key == key {
+			idx = i
+			break
+		}
+		idx = -1 // not found
+	}
+	if idx >= 0 {
+		expectedResponse := f.ExpectedResponses[idx]
+		resp = expectedResponse.Response
+		var newExpectedResponses []*ExpectedResponse
+		for i := 0; i < len(f.ExpectedResponses); i++ {
+			if i != idx {
+				newExpectedResponses = append(newExpectedResponses, f.ExpectedResponses[i])
+			}
+		}
+	}
+	if resp != nil {
+		return resp, nil
+	}
+	return nil, errors.New(fmt.Sprintf("100: Key not found (%v) [39881395]", key))
+}
+func (f *FakeKeysAPI) getOrdered(ctx context.Context, key string, opts *client.GetOptions) (resp *client.Response, err error) {
 	if len(f.ExpectedResponses) == 0 {
 		return nil, errors.New(fmt.Sprintf("Unexpected key Get for %v", key))
 	}
@@ -55,6 +80,13 @@ func (f *FakeKeysAPI) Get(ctx context.Context, key string, opts *client.GetOptio
 		return nil, errors.New(fmt.Sprintf("100: Key not found (%v) [39881395]", key))
 	}
 	return expectedResponse.Response, nil
+}
+
+func (f *FakeKeysAPI) Get(ctx context.Context, key string, opts *client.GetOptions) (resp *client.Response, err error) {
+	if f.AllowUnordered {
+		return f.getUnordered(ctx, key, opts)
+	}
+	return f.getOrdered(ctx, key, opts)
 }
 
 func (f *FakeKeysAPI) Set(ctx context.Context, key, val string, opts *client.SetOptions) (*client.Response, error) {
